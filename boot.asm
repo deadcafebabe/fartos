@@ -1,194 +1,109 @@
-org 0x7C00
-bits 16
+/* Declare constants for the multiboot header. */
+.set ALIGN,    1<<0             /* align loaded modules on page boundaries */
+.set MEMINFO,  1<<1             /* provide memory map */
+.set FLAGS,    ALIGN | MEMINFO  /* this is the Multiboot 'flag' field */
+.set MAGIC,    0x1BADB002       /* 'magic number' lets bootloader find the header */
+.set CHECKSUM, -(MAGIC + FLAGS) /* checksum of above, to prove we are multiboot */
 
-KERNEL_LOCATION equ 0x1000
-CODE_SEG equ gdt_code - gdt_start
-DATA_SEG equ gdt_data - gdt_start
+/* 
+Declare a multiboot header that marks the program as a kernel. These are magic
+values that are documented in the multiboot standard. The bootloader will
+search for this signature in the first 8 KiB of the kernel file, aligned at a
+32-bit boundary. The signature is in its own section so the header can be
+forced to be within the first 8 KiB of the kernel file.
+*/
+.section .multiboot
+.align 4
+.long MAGIC
+.long FLAGS
+.long CHECKSUM
 
-; Header
-jmp short end_header
-nop
+/*
+The multiboot standard does not define the value of the stack pointer register
+(esp) and it is up to the kernel to provide a stack. This allocates room for a
+small stack by creating a symbol at the bottom of it, then allocating 16384
+bytes for it, and finally creating a symbol at the top. The stack grows
+downwards on x86. The stack is in its own section so it can be marked nobits,
+which means the kernel file is smaller because it does not contain an
+uninitialized stack. The stack on x86 must be 16-byte aligned according to the
+System V ABI standard and de-facto extensions. The compiler will assume the
+stack is properly aligned and failure to align the stack will result in
+undefined behavior.
+*/
+.section .bss
+.align 16
+stack_bottom:
+.skip 16384 # 16 KiB
+stack_top:
 
-bdb_oem:                    db 'MSWIN4.1'           ; 8 bytes
-bdb_bytes_per_sector:       dw 512
-bdb_sectors_per_cluster:    db 1
-bdb_reserved_sectors:       dw 1
-bdb_fat_count:              db 2
-bdb_dir_entries_count:      dw 0x0E0
-bdb_total_sectors:          dw 2880                 ; 2880 * 512 = 1.44MB
-bdb_media_descriptor_type:  db 0x0F0                 ; F0 = 3.5" floppy disk
-bdb_sectors_per_fat:        dw 9                    ; 9 sectors/fat
-bdb_sectors_per_track:      dw 18
-bdb_heads:                  dw 2
-bdb_hidden_sectors:         dd 0
-bdb_large_sector_count:     dd 0
+/*
+The linker script specifies _start as the entry point to the kernel and the
+bootloader will jump to this position once the kernel has been loaded. It
+doesn't make sense to return from this function as the bootloader is gone.
+*/
+.section .text
+.global _start
+.type _start, @function
+_start:
+	/*
+	The bootloader has loaded us into 32-bit protected mode on a x86
+	machine. Interrupts are disabled. Paging is disabled. The processor
+	state is as defined in the multiboot standard. The kernel has full
+	control of the CPU. The kernel can only make use of hardware features
+	and any code it provides as part of itself. There's no printf
+	function, unless the kernel provides its own <stdio.h> header and a
+	printf implementation. There are no security restrictions, no
+	safeguards, no debugging mechanisms, only what the kernel provides
+	itself. It has absolute and complete power over the
+	machine.
+	*/
 
-; extended boot record
-ebr_drive_number:           db 0                    ; 0x00 floppy, 0x80 hdd, useless
-                            db 0                    ; reserved
-ebr_signature:              db 0x29
-ebr_volume_id:              db 0x12, 0x34, 0x56, 0x78   ; serial number, value doesn't matter
-ebr_volume_label:           db 'FARTOS     '        ; 11 bytes, padded with spaces
-ebr_system_id:              db 'FAT12   '           ; 8 bytes
+	/*
+	To set up a stack, we set the esp register to point to the top of the
+	stack (as it grows downwards on x86 systems). This is necessarily done
+	in assembly as languages such as C cannot function without a stack.
+	*/
+	mov $stack_top, %esp
 
-rootdir_addr: dw 0 
+	/*
+	This is a good place to initialize crucial processor state before the
+	high-level kernel is entered. It's best to minimize the early
+	environment where crucial features are offline. Note that the
+	processor is not fully initialized yet: Features such as floating
+	point instructions and instruction set extensions are not initialized
+	yet. The GDT should be loaded here. Paging should be enabled here.
+	C++ features such as global constructors and exceptions will require
+	runtime support to work as well.
+	*/
 
-end_header:
-    jmp main
+	/*
+	Enter the high-level kernel. The ABI requires the stack is 16-byte
+	aligned at the time of the call instruction (which afterwards pushes
+	the return pointer of size 4 bytes). The stack was originally 16-byte
+	aligned above and we've pushed a multiple of 16 bytes to the
+	stack since (pushed 0 bytes so far), so the alignment has thus been
+	preserved and the call is well defined.
+	*/
+	call main
 
-puts:
-    mov si, ax
-    mov ah, 0xE
-    cld
+	/*
+	If the system has nothing more to do, put the computer into an
+	infinite loop. To do that:
+	1) Disable interrupts with cli (clear interrupt enable in eflags).
+	   They are already disabled by the bootloader, so this is not needed.
+	   Mind that you might later enable interrupts and return from
+	   kernel_main (which is sort of nonsensical to do).
+	2) Wait for the next interrupt to arrive with hlt (halt instruction).
+	   Since they are disabled, this will lock up the computer.
+	3) Jump to the hlt instruction if it ever wakes up due to a
+	   non-maskable interrupt occurring or due to system management mode.
+	*/
+	cli
+1:	hlt
+	jmp 1b
 
-.loop:
-    lodsb
-    cmp al, 0
-    jz .endloop
-    int 0x10
-    jmp .loop
-
-.endloop:
-    ret
-
-read_disk:
-    push ax
-    push cx
-    push dx
-    
-    xor dx, dx                          ; dx = 0
-    div word [bdb_sectors_per_track]    ; ax = LBA / SectorsPerTrack
-                                        ; dx = LBA % SectorsPerTrack
-
-    inc dx                              ; dx = (LBA % SectorsPerTrack + 1) = sector
-    mov cx, dx                          ; cx = sector
-
-    xor dx, dx                          ; dx = 0
-    div word [bdb_heads]                ; ax = (LBA / SectorsPerTrack) / Heads = cylinder
-                                        ; dx = (LBA / SectorsPerTrack) % Heads = head
-    mov dh, dl                          ; dh = head
-    mov ch, al                          ; ch = cylinder (lower 8 bits)
-    shl ah, 6
-    or cl, ah                           ; put upper 2 bits of cylinder in CL
-    
-    pop ax
-    mov dl, al ; restore disk number to dl
-    
-    pop ax
-    mov ah, 2
-    int 0x13
-
-    pop ax
-    ret
-
-main:
-    xor ax, ax
-    mov ds, ax
-    mov ss, ax
-    mov es, ax
-    mov cx, ax
-    mov sp, 0x8000
-
-    mov ax, 3
-    int 0x10
-
-    mov ax, word [bdb_sectors_per_fat]
-    mul [bdb_fat_count]
-    add ax, [bdb_reserved_sectors]
-
-    mov bx, KERNEL_LOCATION
-    mov cx, 1
-    call read_disk
-
-    mov cx, 512
-    mul cx
-    mov word [rootdir_addr], ax
-
-.search_kernel:
-    mov si, kernel_filename
-    mov di, bx
-    xor cl, cl
-
-.loop:
-    mov al, [si]
-    inc si
-    mov dl, [di]
-    inc di
-
-    cmp al, dl
-    jne .endloop
-
-    inc cl
-    jmp .loop
-
-.endloop:
-    cmp cl, 11
-    je .kernel_found
-    
-    cmp al, 0
-    jz .end
-
-    add bx, 32
-    jmp .search_kernel
-
-.kernel_found:
-    mov ax, 32
-    mul word [bdb_dir_entries_count]
-    add ax, word [rootdir_addr]
-    xor dx, dx
-
-    mov cx, 512
-    div cx
-
-    mov cx, word [bx + 0x1A]
-    sub cx, 2
-
-    add ax, cx
-
-    mov bx, KERNEL_LOCATION
-    mov cx, 1
-    call read_disk
-
-    cli
-    lgdt [gdt_descriptor]
-    mov eax, cr0
-    or eax, 1
-    mov cr0, eax
-    jmp 0x8:KERNEL_LOCATION
-
-.end:
-    mov ax, kernel_404
-    call puts
-    jmp $
-
-gdt_start:
-    gdt_null:
-        dd 0x0
-        dd 0x0
-
-    gdt_code:
-        dw 0xffff
-        dw 0x0
-        db 0x0
-        db 0b10011010
-        db 0b11001111
-        db 0x0
-
-    gdt_data:
-        dw 0xffff
-        dw 0x0
-        db 0x0
-        db 0b10010010
-        db 0b11001111
-        db 0x0
-gdt_end:
-
-gdt_descriptor:
-    dw gdt_end - gdt_start - 1
-    dd gdt_start
-
-kernel_filename: db "KERNEL  BIN"
-kernel_404: db "Kernel not found", 0xA, 0xD, 0
-
-times 510-($-$$) db 0
-dw 0xAA55
+/*
+Set the size of the _start symbol to the current location '.' minus its start.
+This is useful when debugging or when you implement call tracing.
+*/
+.size _start, . - _start

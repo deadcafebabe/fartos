@@ -1,12 +1,14 @@
 BUILD_DIR=build
+TARGET=i686-elf
+CROSS_DIR=~/opt/cross/bin
 
 all:
-	nasm boot.asm -o $(BUILD_DIR)/boot.bin
-	nasm kernel.asm -o $(BUILD_DIR)/kernel.bin
-	
-	dd if=/dev/zero of=$(BUILD_DIR)/floppy.img bs=1024 count=1440
-	mkfs.fat -F 12 -n "FARTOS" $(BUILD_DIR)/floppy.img
+	$(CROSS_DIR)/$(TARGET)-as boot.asm -o boot.o
+	$(CROSS_DIR)/$(TARGET)-gcc -c kernel.c -o kernel.o -std=gnu99 -ffreestanding -O2 -Wall -Wextra
+	$(CROSS_DIR)/$(TARGET)-gcc -T linker.ld -o fartos -ffreestanding -O2 -nostdlib boot.o kernel.o -lgcc
 
-	dd if=$(BUILD_DIR)/boot.bin of=$(BUILD_DIR)/floppy.img conv=notrunc
-	mcopy -i $(BUILD_DIR)/floppy.img $(BUILD_DIR)/kernel.bin "::kernel.bin"
-	mcopy -i $(BUILD_DIR)/floppy.img tmp/test.txt "::test.txt"
+	mkdir -p isodir/boot/grub
+	cp fartos isodir/boot/fartos
+	cp grub.cfg isodir/boot/grub/grub.cfg
+	grub-mkrescue -o fartos.iso isodir
+
