@@ -20,23 +20,46 @@ uint16_t vga_entry(uint8_t chr, uint8_t clr)
     return clr << 8 | chr;
 }
 
+void terminal_write_char(uint8_t chr)
+{
+    if (chr == '\n') {
+        video_mem += VIDEO_WIDTH - row;
+        row = 0;
+        column++;
+        return;
+    }
+
+    if (chr == '\r') {
+        video_mem -= row;
+        row = 0;
+        return;
+    }
+
+    *video_mem = vga_entry(chr, 0x7);
+    video_mem++;
+    row++;
+
+    if (row == VIDEO_WIDTH) {
+        row = 0;
+        column++;
+    }
+}
+
+void putc(uint8_t chr)
+{
+    terminal_write_char(chr);
+}
+
 void puts(uint8_t* str)
 {
-    while (*str) {
-        *video_mem = vga_entry(*str, 0x7);
-        str++;
-        video_mem++;
-        row++;
+    while (*str) putc(*str++);
 
-        if (row == VIDEO_WIDTH) {
-            row = 0;
-            column++;
-        }
-    }
+    putc('\n');
 }
 
 void main()
 {
     terminal_init();
-    puts("hello world");
+
+    puts("welcome\nto\nfart\nos");
 }
