@@ -1,4 +1,5 @@
 *.o
 *.iso
+a.out
 fartos
 isodir/
