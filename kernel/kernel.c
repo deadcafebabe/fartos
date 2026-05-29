@@ -1,11 +1,11 @@
 #include "../vga/vga.h"
 
-void putc(uint8_t chr)
+void putc(int chr)
 {
     terminal_write_char(chr);
 }
 
-void puts(uint8_t* str)
+void puts(char* str)
 {
     while (*str) putc(*str++);
 
@@ -15,6 +15,4 @@ void puts(uint8_t* str)
 void main()
 {
     terminal_init();
-
-    puts("lorem\nipsum\ndolor\nsit\namet\nconsectur\n");
 }

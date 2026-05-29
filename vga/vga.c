@@ -24,6 +24,23 @@ void terminal_init()
 
 void terminal_write_char(uint8_t chr)
 {
+    switch (chr) {
+        case '\n':
+            video_mem += VIDEO_WIDTH - row;
+            row = 0;
+            column++;
+            break;
+
+        case '\r':
+            video_mem -= row;
+            row = 0;
+            break;
+
+        case '\t':
+            video_mem += 4 - (row % 4); 
+            row += 4 - (row % 4);
+    }
+
     if (chr == '\n') {
         video_mem += VIDEO_WIDTH - row;
         row = 0;
