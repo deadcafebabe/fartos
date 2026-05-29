@@ -1,5 +1,3 @@
-#include "../vga/vga.h"
-
 void putc(int chr)
 {
     terminal_write_char(chr);
