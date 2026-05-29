@@ -15,4 +15,6 @@ void puts(char* str)
 void main()
 {
     terminal_init();
+
+    puts("hello\nworld");
 }
