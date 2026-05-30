@@ -12,13 +12,14 @@ CRTN_OBJ=crtn.o
 
 OBJ_LINK_LIST=$(CRTI_OBJ) $(CRTBEGIN_OBJ) $(OBJS) $(CRTEND_OBJ) $(CRTN_OBJ)
 
-OBJS=boot.o kernel.o vga.o
+OBJS=boot.o kernel.o vga.o stdio.o
 
 all:
 	$(AS) boot.asm -o boot.o
 	$(AS) crti.asm -o $(CRTI_OBJ)
 	$(AS) crtn.asm -o $(CRTN_OBJ)
 	$(CC) -c kernel/vga.c -o vga.o $(CFLAGS)
+	$(CC) -c libc/stdio.c -o stdio.o $(CFLAGS)
 	$(CC) -c kernel/kernel.c -o kernel.o $(CFLAGS)
 	$(CC) -T linker.ld -o fartos $(OBJ_LINK_LIST) -lgcc $(CFLAGS)
 
