@@ -18,7 +18,7 @@ all:
 	$(AS) boot.asm -o boot.o
 	$(AS) crti.asm -o $(CRTI_OBJ)
 	$(AS) crtn.asm -o $(CRTN_OBJ)
-	$(CC) -c vga/vga.c -o vga.o $(CFLAGS)
+	$(CC) -c kernel/vga.c -o vga.o $(CFLAGS)
 	$(CC) -c kernel/kernel.c -o kernel.o $(CFLAGS)
 	$(CC) -T linker.ld -o fartos $(OBJ_LINK_LIST) -lgcc $(CFLAGS)
 
