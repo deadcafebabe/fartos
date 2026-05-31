@@ -1,5 +1,7 @@
 *.o
 *.iso
+*.a
 a.out
 fartos
 isodir/
+sysroot/
