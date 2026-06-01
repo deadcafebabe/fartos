@@ -4,6 +4,6 @@
 #include "../kernel/vga.h"
 
 void putc(int chr);
-void puts(char* str);
+void puts(const char* str);
 
 #endif

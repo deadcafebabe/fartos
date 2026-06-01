@@ -13,9 +13,11 @@ CRTBEGIN_OBJ=$(shell $(CC) $(CFLAGS) -print-file-name=crtbegin.o)
 CRTEND_OBJ=$(shell $(CC) $(CFLAGS) -print-file-name=crtend.o)
 CRTN_OBJ=crtn.o
 LIBC=libc.a
+LIBC_OBJS=stdio.o string.o
+
 OBJ_LINK_LIST=$(CRTI_OBJ) $(CRTBEGIN_OBJ) $(LIBC) $(OBJS) $(CRTEND_OBJ) $(CRTN_OBJ)
 
-OBJS=boot.o kernel.o vga.o stdio.o
+OBJS=boot.o kernel.o vga.o
 
 all:
 	$(AS) boot.asm -o boot.o
@@ -23,8 +25,9 @@ all:
 	$(AS) crtn.asm -o $(CRTN_OBJ)
 	$(CC) -c kernel/vga.c -o vga.o $(CFLAGS)
 	$(CC) -c libc/stdio.c -o stdio.o $(CFLAGS)
+	$(CC) -c libc/string.c -o string.o $(CFLAGS)
 
-	$(AR) rcs $(LIBC) stdio.o
+	$(AR) rcs $(LIBC) $(LIBC_OBJS)
 	$(CC) -c kernel/kernel.c -o kernel.o -I$(PROJ_DIR) $(CFLAGS)
 	$(CC) -T linker.ld -o fartos $(OBJ_LINK_LIST) -L. -lc $(CFLAGS)
 
